@@ -1,3 +1,6 @@
+app.get("/", (req, res) => {
+  res.json({ status: "Backend running 🚀" });
+});
 require("dotenv").config();
 
 const express = require("express");
