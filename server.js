@@ -15,7 +15,6 @@ const app = express();
 // ================= MIDDLEWARE =================
 app.use(helmet());
 app.use(morgan("dev"));
-
 app.use(cors());
 app.use(express.json({ limit: "1mb" }));
 
@@ -67,9 +66,7 @@ const limiter = rateLimit({
   max: 30,
 });
 
-// ================= OLLAMA AI =================
-
-   // ================= SMART AI (OLLAMA + ADVANCED FALLBACK) =================
+// ================= AI (OLLAMA + FALLBACK) =================
 async function getAIResponse(message, history = []) {
   try {
     const res = await axios.post(
@@ -79,7 +76,7 @@ async function getAIResponse(message, history = []) {
         prompt: message,
         stream: false,
       },
-      { timeout: 20000 }
+      { timeout: 15000 }
     );
 
     const reply = res.data?.response;
@@ -87,117 +84,82 @@ async function getAIResponse(message, history = []) {
 
     throw new Error("Empty response");
   } catch (err) {
-    console.log("⚠️ Using SMART FAKE AI");
-
-    // ================= CONTEXT =================
-    const lastUserMsg = history
-      .slice()
-      .reverse()
-      .find((m) => m.sender === "user")?.text || "";
+    console.log("⚠️ Using fallback AI");
 
     const text = message.toLowerCase();
 
-    // ================= DYNAMIC RESPONSES =================
     if (text.includes("hi") || text.includes("hello")) {
-      return `Hey 👋 I'm your AI assistant. Ask me anything — coding, projects, or interviews!`;
+      return "Hey 👋 I'm your AI assistant. Ask me anything!";
     }
 
     if (text.includes("how are you")) {
-      return "I'm running perfectly 🚀 Ready to help you build something awesome.";
+      return "I'm running perfectly 🚀 Ready to help!";
     }
 
     if (text.includes("resume")) {
-      return `To improve your resume:
-• Add 2 strong projects (like your AI Resume Builder)
-• Mention tech stack clearly
-• Quantify impact (e.g., "improved performance by 30%")`;
+      return "Add strong projects, clear tech stack, and measurable impact.";
     }
 
     if (text.includes("project")) {
-      return `A strong project should have:
-• Real-world problem
-• Clean UI (React)
-• Backend (Node + DB)
-• Bonus: AI integration (like you're doing 🔥)`;
+      return "Build real-world apps with frontend + backend + database.";
     }
 
     if (text.includes("interview")) {
-      return `Crack interviews by focusing on:
-• DSA (arrays, trees, graphs)
-• Projects explanation
-• Communication (very important!)`;
+      return "Focus on DSA, projects, and communication.";
     }
 
-    if (text.includes("react")) {
-      return `React tip:
-Break UI into components, manage state properly, and avoid unnecessary re-renders.`;
-    }
-
-    if (text.includes("node")) {
-      return `Node.js tip:
-Use async/await properly and structure your backend with controllers + routes.`;
-    }
-
-    if (text.includes("mongodb")) {
-      return `MongoDB tip:
-Design schemas based on your queries, not just data. Optimize reads.`;
-    }
-
-    // ================= CONTEXT-AWARE RESPONSE =================
-    if (lastUserMsg && lastUserMsg !== message) {
-      return `You asked earlier: "${lastUserMsg}"
-
-Now for this:
-"${message}"
-
-👉 Here's a helpful answer:
-Focus on solving the problem step by step and keep your logic clear.`;
-    }
-
-    // ================= RANDOMIZED HUMAN-LIKE RESPONSES =================
-    const randomReplies = [
-      "Interesting question 🤔 — here's what I think: break it into smaller parts and solve step by step.",
-      "Good one 🔥 — focus on logic first, then optimize.",
-      "Let’s think about it practically: what is the input and expected output?",
-      "Nice — you're thinking in the right direction. Try approaching it with a clean structure.",
+    const replies = [
+      "Interesting 🤔 — break it step by step.",
+      "Good question 🔥 — focus on logic first.",
+      "Think about input → process → output.",
     ];
 
-    return randomReplies[Math.floor(Math.random() * randomReplies.length)];
+    return replies[Math.floor(Math.random() * replies.length)];
   }
 }
 
 // ================= ROUTES =================
+
+// ✅ ROOT (VERY IMPORTANT)
 app.get("/", (req, res) => {
   res.json({ status: "Backend running 🚀" });
 });
 
 // AUTH
 app.post("/api/signup", limiter, async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  const exists = await User.findOne({ email });
-  if (exists) return res.status(400).json({ error: "User exists" });
+    const exists = await User.findOne({ email });
+    if (exists) return res.status(400).json({ error: "User exists" });
 
-  const hash = await bcrypt.hash(password, 10);
-  await User.create({ email, password: hash });
+    const hash = await bcrypt.hash(password, 10);
+    await User.create({ email, password: hash });
 
-  res.json({ success: true });
+    res.json({ success: true });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 app.post("/api/login", limiter, async (req, res) => {
-  const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-  const user = await User.findOne({ email });
-  if (!user) return res.status(400).json({ error: "User not found" });
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: "User not found" });
 
-  const ok = await bcrypt.compare(password, user.password);
-  if (!ok) return res.status(400).json({ error: "Wrong password" });
+    const ok = await bcrypt.compare(password, user.password);
+    if (!ok) return res.status(400).json({ error: "Wrong password" });
 
-  const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-    expiresIn: "7d",
-  });
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: "7d",
+    });
 
-  res.json({ token });
+    res.json({ token });
+  } catch {
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // CHATS
@@ -234,7 +196,7 @@ app.post("/api/chat", auth, limiter, async (req, res) => {
 
     chat.messages.push({ text: message, sender: "user" });
 
-    const aiReply = await getAIResponse(message);
+    const aiReply = await getAIResponse(message, chat.messages);
 
     chat.messages.push({ text: aiReply, sender: "ai" });
 
@@ -245,11 +207,19 @@ app.post("/api/chat", auth, limiter, async (req, res) => {
       chatId: chat._id,
     });
   } catch (err) {
+    console.log("Chat error:", err.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
+// 404
+app.use((req, res) => {
+  res.status(404).json({ error: "Route not found" });
+});
+
 // ================= START =================
-app.listen(5000, () => {
-  console.log("🚀 Server running on port 5000");
+const PORT = process.env.PORT || 5000;
+
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
